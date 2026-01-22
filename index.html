@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Food Cost - Version 1.3.2 (Optimized)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f8fafc; }
+        .card-custom { background: white; border-radius: 1.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
+        .smart-panel { background: #0f172a; color: white; border-radius: 2rem; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        @keyframes popIn { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .profit-anim { animation: popIn 0.3s ease-out forwards; }
+        .search-results-box { position: absolute; z-index: 100; width: 100%; background: white; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; max-height: 250px; overflow-y: auto; margin-top: 5px; }
+        .search-item { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: all 0.2s; }
+        .search-item:hover { background-color: #f0fdf4; color: #16a34a; }
+        .badge-cat { font-size: 9px; padding: 2px 6px; border-radius: 6px; background: #f1f5f9; color: #64748b; font-weight: bold; }
+    </style>
+</head>
+<body class="p-4 lg:p-10">
+
+<div class="max-w-7xl mx-auto">
+    <header class="mb-8 border-b pb-4 flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-blue-600">Smart Food Cost <span id="header-shop-name" class="text-gray-400 text-xl font-normal ml-2">...</span></h1>
+            <span class="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-full font-bold">Version 1.3.2 (Optimized Layout)</span>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        <div class="lg:col-span-4">
+            <section class="card-custom p-6 sticky top-4">
+                <h2 class="text-xl font-bold mb-6 flex items-center gap-2">📦 คลังวัตถุดิบ</h2>
+                <div class="space-y-3 mb-6">
+                    <input type="hidden" id="inv-id">
+                    <input id="inv-name" type="text" placeholder="ชื่อวัตถุดิบ" class="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="inv-price" type="number" placeholder="ราคา (฿)" class="p-3 border rounded-xl">
+                        <input id="inv-size" type="number" placeholder="ปริมาณรวม" class="p-3 border rounded-xl">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="inv-unit" type="text" placeholder="หน่วย (กรัม/มล)" class="p-3 border rounded-xl">
+                        <input id="inv-cat" type="text" list="cat-list-inv" placeholder="หมวดหมู่ (ถ้ามี)" class="p-3 border rounded-xl">
+                        <datalist id="cat-list-inv"></datalist>
+                    </div>
+                    <button onclick="saveInventory()" id="btn-inv-main" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-all shadow-md">บันทึกเข้าคลัง</button>
+                    <button id="btn-inv-cancel" onclick="cancelInvEdit()" class="hidden w-full bg-gray-400 text-white py-2 rounded-xl mt-1">ยกเลิกแก้ไข</button>
+                </div>
+                
+                <hr class="mb-4">
+                <div class="space-y-2">
+                    <div class="flex gap-2">
+                        <select id="filter-inv-cat" onchange="renderInventoryUI()" class="w-1/2 p-2 text-xs border rounded-lg outline-none bg-gray-50">
+                            <option value="all" selected>ทุกหมวดหมู่</option>
+                            <option value="none">หมวด: ไม่ระบุ</option>
+                        </select>
+                        <input id="search-inv" type="text" oninput="renderInventoryUI()" placeholder="ค้นชื่อ..." class="w-1/2 p-2 text-xs border rounded-lg outline-none focus:border-blue-400">
+                    </div>
+                </div>
+
+                <div id="inventory-list" class="mt-4 space-y-2 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar"></div>
+            </section>
+        </div>
+
+        <div class="lg:col-span-8 space-y-8">
+            
+            <section class="card-custom p-6 border-t-4 border-green-500">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-2">
+                    <div class="w-full md:w-2/3">
+                        <input id="menu-name" type="text" placeholder="ชื่อเมนูอาหาร..." class="text-2xl font-bold border-b-2 border-green-500 outline-none pb-1 w-full bg-transparent">
+                        <input id="menu-cat" type="text" list="cat-list-menu" placeholder="หมวดหมู่เมนู (ถ้ามี)" class="text-xs text-gray-400 mt-1 outline-none border-none bg-transparent">
+                        <datalist id="cat-list-menu"></datalist>
+                    </div>
+                    <button onclick="clearMenuUI()" class="text-xs text-red-500 hover:underline">ล้างหน้าจอ</button>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-2xl flex flex-col md:flex-row gap-3 items-end mb-6 border">
+                    <div class="flex-1 w-full relative">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase">เลือกส่วนผสม (กรองหมวดหมู่ & ค้นหา)</label>
+                        <div class="flex gap-2">
+                            <select id="filter-ing-cat-menu" onchange="showIngSuggestions()" class="w-1/3 p-3 text-xs border rounded-xl outline-none bg-white focus:ring-2 focus:ring-green-500">
+                                <option value="all" selected>ทุกหมวด</option>
+                                <option value="none">ไม่ระบุหมวด</option>
+                            </select>
+                            <input id="ing-search-input" type="text" onfocus="showIngSuggestions()" oninput="showIngSuggestions()" placeholder="พิมพ์เพื่อค้นหา..." class="w-2/3 p-3 border rounded-xl bg-white outline-none focus:ring-2 focus:ring-green-500 transition-all">
+                        </div>
+                        <div id="ing-suggestions" class="hidden search-results-box custom-scrollbar"></div>
+                        <input type="hidden" id="selected-ing-id">
+                    </div>
+                    <div class="w-full md:w-32">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase">ปริมาณ</label>
+                        <input id="input-qty" type="number" class="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-green-500">
+                    </div>
+                    <button onclick="addIngToMenu()" class="bg-green-600 text-white px-8 py-3 rounded-xl font-bold text-xl shadow hover:bg-green-700 active:scale-95 transition-all">+</button>
+                </div>
+
+                <table class="w-full mb-6 text-sm">
+                    <thead class="text-gray-400 text-[10px] uppercase border-b text-left">
+                        <tr>
+                            <th class="py-2">ส่วนผสม</th>
+                            <th class="text-right py-2">ปริมาณ</th>
+                            <th class="text-right py-2">ต้นทุน (฿)</th>
+                            <th class="text-center py-2">ลบ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="menu-tbody"></tbody>
+                </table>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-blue-50 rounded-2xl border border-blue-100 mb-6 text-center">
+                    <div class="col-span-full text-[10px] font-bold text-blue-600 uppercase mb-1 text-left">ราคาขายจริง (สำหรับบันทึกประวัติ)</div>
+                    <div><label class="text-[10px] block text-gray-500">หน้าร้าน</label><input id="price-0" type="number" class="w-full p-2 border rounded-lg font-bold"></div>
+                    <div><label class="text-[10px] block text-green-600">Grab (32%)</label><input id="price-32" type="number" class="w-full p-2 border rounded-lg font-bold text-green-700"></div>
+                    <div><label class="text-[10px] block text-orange-600">LM (30%)</label><input id="price-30" type="number" class="w-full p-2 border rounded-lg font-bold text-orange-700"></div>
+                    <div><label class="text-[10px] block text-blue-600">อื่นๆ (20%)</label><input id="price-20" type="number" class="w-full p-2 border rounded-lg font-bold text-blue-700"></div>
+                </div>
+
+                <div class="flex justify-between items-center p-4 bg-gray-900 text-white rounded-2xl shadow-lg">
+                    <div class="text-xl font-bold">ทุนรวมปัจจุบัน: <span class="text-red-400">฿<span id="total-cost-text">0.00</span></span></div>
+                    <button onclick="saveMenu()" class="bg-blue-600 px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-500 transition-all">💾 บันทึกเมนู</button>
+                </div>
+            </section>
+
+            <section class="smart-panel p-8 shadow-2xl relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="flex justify-between items-center mb-8 relative z-10">
+                    <h2 class="text-2xl font-bold italic text-white">💎 Smart Simulator</h2>
+                    <div class="flex gap-2">
+                        <button id="btn-baht" onclick="setMode('baht')" class="px-4 py-2 rounded-xl bg-blue-600 text-xs font-bold">บาท</button>
+                        <button id="btn-percent" onclick="setMode('percent')" class="px-4 py-2 rounded-xl bg-white/10 text-xs font-bold">กำไร %</button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-4 relative z-10">
+                    <div class="space-y-4">
+                        <label id="label-target" class="text-blue-300 text-[10px] font-bold uppercase tracking-widest">เป้าหมายกำไร (บาท)</label>
+                        <input id="target-val" type="number" value="40" oninput="calculateSim()" class="w-full bg-white/5 border border-white/20 text-white text-5xl p-4 rounded-2xl outline-none focus:border-blue-400">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button class="gp-btn bg-blue-600 p-2 rounded-lg text-[10px] font-bold border border-blue-400 shadow-md" onclick="setGP(0, this)">หน้าร้าน (0%)</button>
+                            <button class="gp-btn bg-white/5 p-2 rounded-lg text-[10px] font-bold" onclick="setGP(32, this)">Grab (32%)</button>
+                            <button class="gp-btn bg-white/5 p-2 rounded-lg text-[10px] font-bold" onclick="setGP(30, this)">LM (30%)</button>
+                            <button class="gp-btn bg-white/5 p-2 rounded-lg text-[10px] font-bold" onclick="setGP(20, this)">อื่นๆ (20%)</button>
+                        </div>
+                    </div>
+                    <div class="bg-blue-500/10 p-6 rounded-3xl border border-blue-500/20 text-center flex flex-col justify-center">
+                        <div class="text-blue-300 text-[10px] uppercase font-bold mb-2">ราคาตั้งขายแนะนำ (อิงเป้าหมาย)</div>
+                        <div class="text-6xl font-black text-green-400 mb-2">฿<span id="recommend-price">0.00</span></div>
+                        <div id="sim-net-profit" class="text-3xl font-bold text-cyan-400 profit-anim">กำไร: ฿0.00</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card-custom p-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                    <h2 class="text-xl font-bold text-gray-700 flex items-center gap-2">📂 ประวัติเมนูที่บันทึก</h2>
+                    <div class="flex gap-2 w-full md:w-auto">
+                        <select id="filter-menu-cat" onchange="renderHistoryTable()" class="p-2 text-xs border rounded-lg outline-none bg-gray-50">
+                            <option value="all" selected>ทุกหมวดหมู่</option>
+                            <option value="none">ไม่ระบุหมวด</option>
+                        </select>
+                        <input id="search-history" type="text" oninput="renderHistoryTable()" placeholder="ค้นชื่อ..." class="p-2 text-xs border rounded-lg outline-none focus:border-blue-400 w-40">
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                        <thead class="text-gray-400 uppercase text-[10px] border-b bg-gray-50">
+                            <tr>
+                                <th class="py-3 px-2">ชื่อเมนู</th>
+                                <th class="text-right px-2">ทุนปัจจุบัน</th>
+                                <th class="text-center px-2">กำไรสุทธิ</th>
+                                <th class="text-right px-2">ผลต่าง</th>
+                                <th class="text-right px-2">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<script>
+    const SHOP_ID = "aod_1"; 
+    const STORAGE_KEY = 'DATA_' + SHOP_ID;
+    let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { inventory: [], recipes: [] };
+    let currentRecipeItems = [];
+    let currentGP = 0;
+    let profitMode = 'baht';
+
+    const $ = id => document.getElementById(id);
+
+    window.onload = function() {
+        $('header-shop-name').innerText = SHOP_ID;
+        updateCategoryLists();
+        renderInventoryUI();
+        renderRecipeTable();
+        renderHistoryTable();
+        document.addEventListener('click', (e) => {
+            if (!['ing-search-input', 'filter-ing-cat-menu'].includes(e.target.id)) {
+                $('ing-suggestions').classList.add('hidden');
+            }
+        });
+    }
+
+    const sortAlphabet = (arr) => arr.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+
+    function updateCategoryLists() {
+        const invCats = [...new Set(db.inventory.map(i => i.category).filter(c => c))];
+        const menuCats = [...new Set(db.recipes.map(r => r.category).filter(c => c))];
+        
+        const updateSelect = (selectId, cats) => {
+            const select = $(selectId);
+            const current = select.value || 'all'; // เก็บค่าปัจจุบันไว้ ถ้าไม่มีให้เป็น all
+            // แก้ไขลำดับ Dropdown: ทุกหมวดหมู่ มาก่อน ไม่ระบุ
+            select.innerHTML = `<option value="all">ทุกหมวดหมู่</option><option value="none">หมวด: ไม่ระบุ</option>`;
+            cats.sort().forEach(c => select.innerHTML += `<option value="${c}">${c}</option>`);
+            select.value = current;
+        };
+
+        const updateDatalist = (id, cats) => {
+            $(id).innerHTML = '';
+            cats.sort().forEach(c => $(id).innerHTML += `<option value="${c}">`);
+        };
+
+        updateSelect('filter-inv-cat', invCats);
+        updateSelect('filter-menu-cat', menuCats);
+        updateSelect('filter-ing-cat-menu', invCats);
+        updateDatalist('cat-list-inv', invCats);
+        updateDatalist('cat-list-menu', menuCats);
+    }
+
+    // --- คลังวัตถุดิบ ---
+    function saveInventory() {
+        const id = $('inv-id').value;
+        const name = $('inv-name').value.trim();
+        const price = parseFloat($('inv-price').value);
+        const size = parseFloat($('inv-size').value);
+        const unit = $('inv-unit').value.trim();
+        const category = $('inv-cat').value.trim();
+        if (!name || isNaN(price) || isNaN(size)) return alert("ระบุข้อมูลให้ครบ");
+        const costPerUnit = price / size;
+        const data = { id: id ? parseInt(id) : Date.now(), name, price, size, unit, category, costPerUnit };
+        if (id) {
+            const idx = db.inventory.findIndex(i => i.id == id);
+            db.inventory[idx] = data;
+        } else { db.inventory.push(data); }
+        syncDB(); cancelInvEdit();
+    }
+
+    function renderInventoryUI() {
+        const list = $('inventory-list');
+        const searchTerm = $('search-inv').value.toLowerCase();
+        const catFilter = $('filter-inv-cat').value;
+        list.innerHTML = ''; 
+        let filtered = db.inventory.filter(it => it.name.toLowerCase().includes(searchTerm));
+        if (catFilter === 'none') filtered = filtered.filter(it => !it.category);
+        else if (catFilter !== 'all') filtered = filtered.filter(it => it.category === catFilter);
+        sortAlphabet(filtered).forEach(it => {
+            list.innerHTML += `<div onclick="editInv(${it.id})" class="p-3 bg-white border border-gray-100 shadow-sm rounded-xl flex justify-between items-center cursor-pointer hover:border-blue-500 mb-2 transition-all">
+                <div><div class="flex items-center gap-2"><span class="text-sm font-bold text-gray-700">${it.name}</span>${it.category ? `<span class="badge-cat">${it.category}</span>` : ''}</div><div class="text-[10px] text-blue-500">฿${it.costPerUnit.toFixed(4)} / ${it.unit}</div></div>
+                <button onclick="event.stopPropagation(); deleteInv(${it.id})" class="text-gray-300 hover:text-red-500 px-2">✕</button>
+            </div>`;
+        });
+    }
+
+    function showIngSuggestions() {
+        const val = $('ing-search-input').value.toLowerCase();
+        const catFilter = $('filter-ing-cat-menu').value;
+        const box = $('ing-suggestions');
+        box.innerHTML = '';
+        box.classList.remove('hidden');
+        let filtered = db.inventory;
+        if (catFilter === 'none') filtered = filtered.filter(it => !it.category);
+        else if (catFilter !== 'all') filtered = filtered.filter(it => it.category === catFilter);
+        if (val !== '') filtered = filtered.filter(it => it.name.toLowerCase().includes(val));
+        const sortedResult = sortAlphabet([...filtered]);
+        if (sortedResult.length > 0) {
+            sortedResult.forEach(it => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'search-item font-medium flex justify-between items-center';
+                itemDiv.innerHTML = `<div>${it.name} <span class="text-[10px] text-gray-400 ml-1">(${it.unit})</span></div><div class="text-[10px] bg-gray-100 px-2 rounded">${it.category || '-'}</div>`;
+                itemDiv.onclick = () => {
+                    $('selected-ing-id').value = it.id;
+                    $('ing-search-input').value = it.name;
+                    box.classList.add('hidden');
+                    $('input-qty').focus();
+                };
+                box.appendChild(itemDiv);
+            });
+        } else {
+            box.innerHTML = '<div class="p-4 text-center text-xs text-gray-400">ไม่พบวัตถุดิบ</div>';
+        }
+    }
+
+    // --- ส่วนเมนูอาหาร ---
+    function addIngToMenu() {
+        const ingId = $('selected-ing-id').value;
+        const qty = parseFloat($('input-qty').value);
+        if (!ingId || isNaN(qty)) return;
+        currentRecipeItems.push({ id: parseInt(ingId), qty });
+        $('ing-search-input').value = ''; $('selected-ing-id').value = ''; $('input-qty').value = '';
+        renderRecipeTable();
+    }
+
+    function renderRecipeTable() {
+        const tbody = $('menu-tbody'); tbody.innerHTML = '';
+        let total = 0;
+        currentRecipeItems.forEach((it, idx) => {
+            const ing = db.inventory.find(i => i.id == it.id);
+            if (ing) {
+                const cost = ing.costPerUnit * it.qty;
+                total += cost;
+                tbody.innerHTML += `<tr class="border-b"><td class="py-3 font-bold text-gray-700">${ing.name}</td>
+                    <td class="text-right"><input type="number" value="${it.qty}" onchange="updateInlineQty(${idx}, this.value)" class="w-16 p-1 border rounded text-right font-bold text-blue-600 bg-yellow-50"></td>
+                    <td class="text-right font-bold">฿${cost.toFixed(2)}</td>
+                    <td class="text-center"><button onclick="currentRecipeItems.splice(${idx},1); renderRecipeTable()" class="text-red-300">✕</button></td></tr>`;
+            }
+        });
+        $('total-cost-text').innerText = total.toFixed(2); calculateSim();
+    }
+
+    function saveMenu() {
+        const name = $('menu-name').value.trim();
+        const category = $('menu-cat').value.trim();
+        if (!name || currentRecipeItems.length === 0) return alert("ระบุชื่อและส่วนผสม");
+        const sellPrices = { 0: parseFloat($('price-0').value)||0, 32: parseFloat($('price-32').value)||0, 30: parseFloat($('price-30').value)||0, 20: parseFloat($('price-20').value)||0 };
+        const currentCost = parseFloat($('total-cost-text').innerText);
+        const menuData = { id: Date.now(), name, category, items: [...currentRecipeItems], sellPrices,
+            baseProfits: { 0: sellPrices[0]-currentCost, 32: (sellPrices[32]*0.68)-currentCost, 30: (sellPrices[30]*0.70)-currentCost, 20: (sellPrices[20]*0.80)-currentCost }
+        };
+        const existIdx = db.recipes.findIndex(r => r.name === name);
+        if (existIdx >= 0) db.recipes[existIdx] = menuData; else db.recipes.push(menuData);
+        syncDB(); alert("บันทึกสำเร็จ!");
+    }
+
+    function renderHistoryTable() {
+        const tbody = $('history-tbody');
+        const searchTerm = $('search-history').value.toLowerCase();
+        const catFilter = $('filter-menu-cat').value;
+        tbody.innerHTML = '';
+        let filtered = db.recipes.filter(r => r.name.toLowerCase().includes(searchTerm));
+        if (catFilter === 'none') filtered = filtered.filter(r => !r.category);
+        else if (catFilter !== 'all') filtered = filtered.filter(r => r.category === catFilter);
+        sortAlphabet(filtered).forEach(r => {
+            let currentCost = 0;
+            r.items.forEach(it => { const ing = db.inventory.find(i => i.id == it.id); if(ing) currentCost += (ing.costPerUnit * it.qty); });
+            const sellPrice = r.sellPrices[currentGP] || 0;
+            const currentNetProfit = (sellPrice * (1 - currentGP/100)) - currentCost;
+            const diff = currentNetProfit - (r.baseProfits[currentGP] || 0);
+            let diffDisplay = Math.abs(diff) >= 0.01 ? `<span class="${diff>0?'text-green-500':'text-red-500'} font-bold">${diff>0?'+':''}${diff.toFixed(2)}</span>` : '';
+            tbody.innerHTML += `<tr class="border-b hover:bg-gray-50"><td class="py-4 px-2"><div class="font-bold text-gray-700">${r.name}</div>${r.category ? `<div class="text-[9px] text-gray-400">หมวด: ${r.category}</div>` : ''}</td>
+                <td class="text-right px-2 text-gray-400 font-bold">฿${currentCost.toFixed(2)}</td><td class="text-center px-2"><div class="text-blue-600 font-bold">฿${currentNetProfit.toFixed(2)}</div><div class="text-[9px] text-gray-400">ขาย ฿${sellPrice}</div></td>
+                <td class="text-right px-2">${diffDisplay}</td><td class="text-right px-2 space-x-2"><button onclick="loadMenu(${r.id})" class="text-green-500 hover:underline">ใช้</button><button onclick="deleteMenu(${r.id})" class="text-red-200">✕</button></td></tr>`;
+        });
+    }
+
+    function calculateSim() {
+        const cost = parseFloat($('total-cost-text').innerText) || 0;
+        const target = parseFloat($('target-val').value) || 0;
+        const gp = currentGP / 100;
+        let sell = (cost > 0) ? (profitMode === 'baht' ? (cost + target)/(1 - gp) : cost/(1 - (target/100 + gp))) : 0;
+        $('recommend-price').innerText = (sell > 0 ? sell : 0).toFixed(2);
+        let netProfit = (sell > 0) ? (sell * (1 - gp)) - cost : 0;
+        const profitEl = $('sim-net-profit'); profitEl.innerText = `กำไร: ฿${netProfit.toFixed(2)}`;
+        profitEl.classList.remove('profit-anim'); void profitEl.offsetWidth; profitEl.classList.add('profit-anim');
+        renderHistoryTable(); 
+    }
+
+    function syncDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); updateCategoryLists(); renderInventoryUI(); renderHistoryTable(); }
+    
+    function editInv(id) {
+        const it = db.inventory.find(i => i.id == id);
+        $('inv-id').value = it.id; $('inv-name').value = it.name; $('inv-price').value = it.price;
+        $('inv-size').value = it.size; $('inv-unit').value = it.unit; $('inv-cat').value = it.category || '';
+        $('btn-inv-main').innerText = "อัปเดตข้อมูล"; $('btn-inv-main').className = "w-full bg-orange-500 text-white font-bold py-3 rounded-xl";
+        $('btn-inv-cancel').classList.remove('hidden');
+    }
+
+    function cancelInvEdit() {
+        $('inv-id').value = ''; ['inv-name','inv-price','inv-size','inv-unit','inv-cat'].forEach(f => $(f).value = '');
+        $('btn-inv-main').innerText = "บันทึกเข้าคลัง"; $('btn-inv-main').className = "w-full bg-blue-600 text-white font-bold py-3 rounded-xl";
+        $('btn-inv-cancel').classList.add('hidden');
+    }
+
+    function loadMenu(id) {
+        const r = db.recipes.find(r => r.id == id);
+        $('menu-name').value = r.name; $('menu-cat').value = r.category || ''; currentRecipeItems = [...r.items];
+        ['0','32','30','20'].forEach(gp => $(`price-${gp}`).value = r.sellPrices[gp]);
+        renderRecipeTable(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function updateInlineQty(idx, val) { currentRecipeItems[idx].qty = parseFloat(val) || 0; renderRecipeTable(); }
+    function deleteInv(id) { if(confirm('ลบวัตถุดิบ?')) { db.inventory = db.inventory.filter(i => i.id != id); syncDB(); } }
+    function deleteMenu(id) { if(confirm('ลบเมนู?')) { db.recipes = db.recipes.filter(r => r.id != id); syncDB(); } }
+    function setGP(val, btn) {
+        currentGP = val; document.querySelectorAll('.gp-btn').forEach(b => b.className = "gp-btn bg-white/5 p-2 rounded-lg text-[10px] font-bold");
+        btn.className = "gp-btn bg-blue-600 p-2 rounded-lg text-[10px] font-bold border border-blue-400 shadow-lg"; calculateSim();
+    }
+    function setMode(m) {
+        profitMode = m; $('label-target').innerText = m === 'baht' ? 'เป้าหมายกำไร (บาท)' : 'เป้าหมายกำไร (%)';
+        $('btn-baht').className = m === 'baht' ? "px-4 py-2 rounded-xl bg-blue-600 text-xs font-bold" : "px-4 py-2 rounded-xl bg-white/10 text-xs font-bold";
+        $('btn-percent').className = m === 'percent' ? "px-4 py-2 rounded-xl bg-blue-600 text-xs font-bold" : "px-4 py-2 rounded-xl bg-white/10 text-xs font-bold";
+        calculateSim();
+    }
+    function clearMenuUI() {
+        $('menu-name').value = ''; $('menu-cat').value = ''; currentRecipeItems = [];
+        ['0','32','30','20'].forEach(gp => $(`price-${gp}`).value = ''); renderRecipeTable();
+    }
+</script>
+</body>
+</html>
