@@ -88,7 +88,7 @@
             <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
           </div>
           {isOpen && (
-            <div className="fixed inset-0 z-[100] flex flex-col justify-end bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="fixed inset-0 z-[9999] flex flex-col justify-end bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
               <div className="bg-white w-full h-[75vh] sm:h-[85vh] rounded-t-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-full duration-200">
                 <div className="p-4 border-b flex justify-between items-center bg-gray-50">
                   <h3 className="font-bold text-gray-800">{placeholder}</h3>
@@ -148,7 +148,21 @@
       
       const [pendingSalesInputs, setPendingSalesInputs] = useState({}); const [expenseInput, setExpenseInput] = useState({ name: '', amount: '', payMethod: 'เงินสด' });
 
-      const getOverheadList = (monthKey) => { const data = monthlyOverheads[monthKey]; return data ? (Array.isArray(data) ? data : [{ id: `lgc-${monthKey}`, name: 'ค่าใช้จ่ายรวม', estimate: data.estimate || 0, actual: data.actual === null ? '' : data.actual }]) : []; };
+      const getOverheadList = (monthKey) => {
+        const normalize = (data, mk) => data ? (Array.isArray(data) ? data : [{ id: `lgc-${mk}`, name: 'ค่าใช้จ่ายรวม', estimate: data.estimate || 0, actual: data.actual === null ? '' : data.actual }]) : null;
+        // Try exact month first
+        const exact = normalize(monthlyOverheads[monthKey], monthKey);
+        if (exact && exact.length > 0) return exact;
+        // Fallback: find the nearest available month (most recent)
+        const allKeys = Object.keys(monthlyOverheads).sort().reverse();
+        if (allKeys.length === 0) return [];
+        // Prefer the nearest month that is <= requested month
+        const lte = allKeys.find(k => k <= monthKey);
+        if (lte) { const d = normalize(monthlyOverheads[lte], lte); if (d && d.length > 0) return d; }
+        // Otherwise use any available month
+        for (const k of allKeys) { const d = normalize(monthlyOverheads[k], k); if (d && d.length > 0) return d; }
+        return [];
+      };
 
       const injectDemoData = () => {
         setCategoryOrder(['เนื้อสัตว์', 'อาหารทะเล', 'ผักสด', 'ของแห้ง', 'เครื่องดื่ม']); setVendors(['ตลาดสด', 'Makro', 'ร้านเจ๊หมวย', 'เฮียซ้งทะเล', 'โลตัส']); setExpCats(['ค่าแก๊ส', 'น้ำแข็ง', 'ซื้อของจุกจิก', 'ค่าซ่อมบำรุง']);
@@ -193,7 +207,19 @@
         }
         setInventory(currentInvState); setDailyHistory(demoHistory.reverse()); setReceipts(demoReceipts.reverse()); setDailyExpenses(demoExpenses);
         const curMonthKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-        setMonthlyOverheads({ [curMonthKey]: [{ id: `oh-${Date.now()}-1`, name: 'ค่าเช่าร้าน', estimate: 15000, actual: '' }, { id: `oh-${Date.now()}-2`, name: 'เงินเดือนพนักงาน', estimate: 18000, actual: '' }] });
+        const demoOverheadTemplate = [
+          { name: 'เงินเดือนพนักงาน', estimate: 20000 },
+          { name: 'ค่าไฟฟ้า', estimate: 20000 },
+          { name: 'ค่าจ้างกิ๊ก', estimate: 15000 }
+        ];
+        const demoOverheadObj = {};
+        const todayForOH = new Date();
+        for (let mi = 0; mi < 4; mi++) {
+          const d = new Date(todayForOH.getFullYear(), todayForOH.getMonth() - mi, 1);
+          const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+          demoOverheadObj[mk] = demoOverheadTemplate.map((o, oi) => ({ id: `oh-${mk}-${oi}`, name: o.name, estimate: o.estimate, actual: '' }));
+        }
+        setMonthlyOverheads(demoOverheadObj);
         alert(`โหลดข้อมูลจำลองสำเร็จ!\n(จำลองวันที่ ${getDaysAgo(10)} ถึง ${getTodayFormatted()})`);
       };
 
@@ -338,35 +364,31 @@
       const shiftStockMatrix = (steps) => setStockMatrixOffset(prev => Math.max(0, Math.min(maxStockMatrixOffset, prev + steps)));
       const visibleStockDates = uniqueCheckedDates.slice(stockMatrixOffset, stockMatrixOffset + 10);
 
-      // pendingRecords: รอบที่ยังไม่ได้ลงยอดขาย (auto-enriched จาก dailySalesRecords)
-      const pendingRecords = useMemo(() => {
+      // completedRecords: Dynamic sales calculation (fallback to stored h.sales if no daily records found)
+      const completedRecords = useMemo(() => {
         return dailyHistory
-          .filter(h => h.sales === null && h.type === 'checked')
-          .sort((a, b) => parseDDMMYYYY(a.endDate || a.date) - parseDDMMYYYY(b.endDate || b.date))
+          .filter(h => h.type === 'checked')
+          .sort((a, b) => parseDDMMYYYY(b.endDate || b.date) - parseDDMMYYYY(a.endDate || a.date))
           .map(h => {
-            // คำนวณยอดขายอัตโนมัติจาก dailySalesRecords
-            let autoSales = null; let covered = 0; let totalDays = 0;
-            if (dailySalesRecords.length > 0) {
-              const startMs = parseDDMMYYYY(h.startDate || h.date);
-              const endMs = parseDDMMYYYY(h.endDate || h.date);
-              totalDays = Math.round((endMs - startMs) / 86400000) + 1;
-              let total = 0;
-              dailySalesRecords.forEach(r => {
-                const rMs = parseDDMMYYYY(r.date);
-                if (rMs >= startMs && rMs <= endMs) {
-                  const grabAmt = (r.grab?.after != null && r.grab?.after !== '') ? Number(r.grab.after) : Number(r.grab?.before || 0);
-                  const linemanAmt = (r.lineman?.after != null && r.lineman?.after !== '') ? Number(r.lineman.after) : Number(r.lineman?.before || 0);
-                  const creditTotal = (r.credits || []).reduce((s, c) => s + Number(c.amount || 0), 0);
-                  total += Number(r.cash || 0) + Number(r.transfer || 0) + grabAmt + linemanAmt + creditTotal;
-                  covered++;
-                }
-              });
-              if (covered > 0) autoSales = total;
-            }
-            return { ...h, _autoSales: autoSales, _coveredDays: covered, _totalDays: totalDays };
+            let autoSales = 0;
+            let covered = 0;
+            const startMs = parseDDMMYYYY(h.startDate || h.date);
+            const endMs = parseDDMMYYYY(h.endDate || h.date);
+            dailySalesRecords.forEach(r => {
+              const rMs = parseDDMMYYYY(r.date);
+              if (rMs >= startMs && rMs <= endMs) {
+                const grabAmt = (r.grab?.after != null && r.grab?.after !== '') ? Number(r.grab.after) : Number(r.grab?.before || 0);
+                const linemanAmt = (r.lineman?.after != null && r.lineman?.after !== '') ? Number(r.lineman.after) : Number(r.lineman?.before || 0);
+                const creditTotal = (r.credits || []).reduce((s, c) => s + Number(c.amount || 0), 0);
+                autoSales += Number(r.cash || 0) + Number(r.transfer || 0) + grabAmt + linemanAmt + creditTotal;
+                covered++;
+              }
+            });
+            // If no daily sales records found for this period, fall back to stored h.sales value
+            const finalSales = covered > 0 ? autoSales : (h.sales != null ? h.sales : 0);
+            return { ...h, sales: finalSales, _fromDailySales: covered > 0 };
           });
       }, [dailyHistory, dailySalesRecords]);
-      const completedRecords = useMemo(() => { return dailyHistory.filter(h => h.sales !== null && h.type === 'checked').sort((a, b) => parseDDMMYYYY(b.endDate || b.date) - parseDDMMYYYY(a.endDate || a.date)); }, [dailyHistory]);
       
       const getMonthlyStats = () => {
         const stats = {};
@@ -456,10 +478,16 @@
         const sales = h.sales || 0; const cost = h.totalUsedVal + h.totalWasteVal; const grossProfit = sales - cost;
         const gpPercent = sales > 0 ? (grossProfit / sales) * 100 : 0;
 
+        const overheadsForPeriod = overheadList.map(o => ({
+          id: o.id, name: o.name,
+          amount: ((Number(o.actual !== null && o.actual !== '' ? o.actual : o.estimate) || 0) / daysInMonth) * (h.days || 1)
+        })).sort((a, b) => b.amount - a.amount);
+
         return {
           id: h.id || i, monthKey, dateLabel: h.days > 1 ? `${h.startDate} ถึง ${h.endDate}` : fallbackDateStr, 
           days: h.days || 1, sales: sales, cost: cost, costUsed: h.totalUsedVal, costWaste: h.totalWasteVal,
           dailyExp: dailyExpTotal, expensesList: expensesGroupedList, rawExpenses: expensesInPeriod, overhead: totalOverheadForPeriod,
+          overheadList: overheadsForPeriod,
           isEstimate: !isAllActual && overheadList.length > 0, grossProfit, gpPercent
         };
       });
@@ -629,6 +657,13 @@
         if (item.lastPrice > 0) { const diff = Number(purchasePrice) - item.lastPrice; const pctV = ((diff / item.lastPrice) * 100).toFixed(1); if (diff > 0) priceNote = `แพงขึ้น +${pctV}%`; else if (diff < 0) priceNote = `ถูกลง ${Math.abs(pctV)}%`; }
         setBillItems([...billItems, { cartId: Date.now(), item, qty: Number(purchaseQty), price: Number(purchasePrice), total: Number(purchaseQty) * Number(purchasePrice), oldPrice: item.lastPrice, priceNote }]);
         setSelectedItem(''); setPurchaseQty(''); setPurchasePrice('');
+      };
+      
+      const handleVendorChange = (vendor) => {
+        if (billItems.length > 0 && vendor !== selectedVendor) {
+          if (!window.confirm("คุณมีรายการในบิลชั่วคราวแล้ว ยืนยันที่จะเปลี่ยนร้านค้าหรือไม่? (รายการเดิมจะคงอยู่แต่ถูกเปลี่ยนชื่อร้านค้า)")) return;
+        }
+        setSelectedVendor(vendor);
       };
       
       const handleSaveBill = () => {
@@ -1251,43 +1286,6 @@
             
             {activeTab === 'dashboard' && auth.role !== 'staff' && (
               <div className="space-y-4 animate-in fade-in">
-                {pendingRecords.length > 0 && (
-                  <div className="bg-yellow-50 rounded-xl shadow-sm border border-yellow-200 overflow-hidden mb-4">
-                    <div className="bg-yellow-500 px-4 py-3 flex justify-between items-center"><h3 className="font-bold text-white text-sm">⚠️ รอระบุยอดขาย ({pendingRecords.length} รอบ)</h3><span className="text-[10px] text-yellow-100 bg-yellow-600 px-2 py-0.5 rounded">เก่าสุดอยู่บนสุด</span></div>
-                    <div className="divide-y divide-yellow-100 p-2 space-y-2 max-h-[300px] overflow-y-auto smooth-scroll">
-                      {pendingRecords.map((record, index) => {
-                        const isOldest = index === 0; // เก่าสุดอยู่ตำแหน่ง 0 (เรียงจากเก่า-ใหม่) - ต้องกรอกเก่าก่อนเสมอ
-                        const fallbackDateStr = record.endDate || record.date || getTodayFormatted();
-                        return (
-                          <div key={record.id} className={`p-3 rounded-lg border ${isOldest ? 'bg-white border-yellow-400 shadow-sm ring-1 ring-yellow-400' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
-                            <div className="flex justify-between items-center mb-2"><div><div className="font-bold text-sm text-gray-800">{record.days > 1 ? `รอบ: ${record.startDate} ถึง ${record.endDate}` : `รอบ: ${fallbackDateStr}`}</div><div className="text-[10px] text-gray-500">นับไปเมื่อสิ้นวันล่าสุด</div></div><div className="text-right"><div className="text-[10px] text-red-600 font-bold">ต้นทุนที่ใช้ไป (Food Cost)</div><div className="font-bold text-red-700">{formatMoney(record.totalUsedVal + record.totalWasteVal)} บ.</div></div></div>
-                            {isOldest ? (
-                              <div className="mt-2 space-y-2">
-                                {record._autoSales != null ? (
-                                  <div className="bg-green-50 border border-green-200 rounded-lg p-2">
-                                    <div className="flex justify-between items-center mb-1">
-                                      <span className="text-[10px] text-green-700 font-bold">📊 ยอดอัตโนมัติจากบันทึกยอดขายรายวัน</span>
-                                      <span className="text-[9px] text-green-600">{record._coveredDays}/{record._totalDays} วัน</span>
-                                    </div>
-                                    <div className="flex gap-2 items-center">
-                                      <span className="flex-1 text-center font-black text-green-800 text-lg">{formatMoney(record._autoSales)} บ.</span>
-                                      <button onClick={() => savePendingSales(record.id, record._autoSales)} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-1.5 rounded shadow-sm text-xs transition-colors">✓ ใช้ยอดนี้</button>
-                                    </div>
-                                    {record._coveredDays < record._totalDays && <p className="text-[9px] text-orange-600 mt-1">⚠️ ข้อมูลไม่ครบ {record._totalDays - record._coveredDays} วัน (ใช้ยอดที่บันทึกไว้)</p>}
-                                  </div>
-                                ) : null}
-                                <div className="flex gap-2 items-stretch">
-                                  <input type="number" placeholder={record._autoSales != null ? "หรือกรอกยอดเองด้านล่าง" : "กรอกยอดขายของรอบนี้"} value={pendingSalesInputs[record.id] || ''} onChange={(e) => setPendingSalesInputs({...pendingSalesInputs, [record.id]: e.target.value})} className="flex-1 p-2 border-2 border-yellow-300 rounded focus:outline-none focus:border-yellow-500 font-bold text-center text-sm" />
-                                  <button onClick={() => savePendingSales(record.id, null)} className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold px-4 rounded shadow-sm text-xs transition-colors">บันทึกยอดขาย</button>
-                                </div>
-                              </div>
-                            ) : (<div className="text-[10px] text-center text-gray-500 bg-gray-100 p-2 rounded mt-2 font-bold flex items-center justify-center gap-1"><span>🔒</span> กรุณาระบุยอดขายรอบเก่ากว่าก่อน</div>)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* ===== Card: บันทึกยอดขายรายวัน ===== */}
                 {(() => {
@@ -1556,7 +1554,17 @@
                                   <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
                                     <div className="font-bold border-b-2 border-gray-800 pb-2 mb-2 text-gray-800 text-sm">หักค่าใช้จ่ายดำเนินการ (OPEX)</div>
                                     <div className="space-y-3">
-                                      <div><div className="flex justify-between text-orange-700 font-bold mb-1 border-b border-gray-100 pb-1"><span title="ค่าเช่า, เงินเดือน ฯลฯ หารเฉลี่ยตามวัน">รายเดือนเฉลี่ย {item.isEstimate ? '(ประเมิน)' : ''}</span><span>{formatMoney(item.overhead)} <span className="text-[9px] text-orange-400 font-normal">({item.sales > 0 ? ((item.overhead/item.sales)*100).toFixed(1) : 0}%)</span></span></div></div>
+                                      <div>
+                                        <div className="flex justify-between text-orange-700 font-bold mb-1 border-b border-gray-100 pb-1"><span title="ค่าเช่า, เงินเดือน ฯลฯ หารเฉลี่ยตามวัน">รายเดือนเฉลี่ย {item.isEstimate ? '(ประเมิน)' : ''}</span><span>{formatMoney(item.overhead)} <span className="text-[9px] text-orange-400 font-normal">({item.sales > 0 ? ((item.overhead/item.sales)*100).toFixed(1) : 0}%)</span></span></div>
+                                        <ul className="text-xs text-orange-600 space-y-1 pl-1">
+                                          {item.overheadList && item.overheadList.filter(o => o.amount > 0).map((o, idx) => (
+                                            <li key={idx} className="flex justify-between items-center group">
+                                              <span className="truncate pr-2">- {o.name}</span>
+                                              <span className="font-medium shrink-0">{formatMoney(o.amount)} บ.</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
                                       <div>
                                         <div className="flex justify-between text-orange-700 font-bold mb-1 border-b border-gray-100 pb-1"><span>จ่ายยิบย่อยรายวัน</span><span>{formatMoney(item.dailyExp)} <span className="text-[9px] text-orange-400 font-normal">({item.sales > 0 ? ((item.dailyExp/item.sales)*100).toFixed(1) : 0}%)</span></span></div>
                                         {item.expensesList.length > 0 ? (
